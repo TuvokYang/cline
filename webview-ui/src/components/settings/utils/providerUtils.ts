@@ -591,6 +591,7 @@ export function getModeSpecificFields(apiConfiguration: ApiConfiguration | undef
 			reasoningEffort: undefined,
 			anthropicModelInfo: undefined,
 			anthropicCustomModelEnabled: undefined,
+			anthropicBaseUrl: undefined,
 		}
 	}
 
@@ -684,6 +685,7 @@ export function getModeSpecificFields(apiConfiguration: ApiConfiguration | undef
 			mode === "plan"
 				? apiConfiguration.planModeAnthropicCustomModelEnabled
 				: apiConfiguration.actModeAnthropicCustomModelEnabled,
+		anthropicBaseUrl: mode === "plan" ? apiConfiguration.planModeAnthropicBaseUrl : apiConfiguration.actModeAnthropicBaseUrl,
 	}
 }
 
@@ -861,6 +863,8 @@ export async function syncModeConfigurations(
 			updates.actModeAnthropicModelInfo = sourceFields.anthropicModelInfo
 			updates.planModeAnthropicCustomModelEnabled = sourceFields.anthropicCustomModelEnabled
 			updates.actModeAnthropicCustomModelEnabled = sourceFields.anthropicCustomModelEnabled
+			updates.planModeAnthropicBaseUrl = sourceFields.anthropicBaseUrl
+			updates.actModeAnthropicBaseUrl = sourceFields.anthropicBaseUrl
 			break
 
 		case "claude-code":

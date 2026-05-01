@@ -285,6 +285,8 @@ message Settings {
   optional OpenRouterModelInfo act_mode_anthropic_model_info = 185;
   optional bool plan_mode_anthropic_custom_model_enabled = 186;
   optional bool act_mode_anthropic_custom_model_enabled = 187;
+  optional string plan_mode_anthropic_base_url = 188;
+  optional string act_mode_anthropic_base_url = 189;
 }
 
 message State {

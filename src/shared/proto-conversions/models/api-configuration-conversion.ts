@@ -562,6 +562,7 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		planModeVercelAiGatewayModelInfo: convertModelInfoToProtoOpenRouter(config.planModeVercelAiGatewayModelInfo),
 		planModeAnthropicModelInfo: convertModelInfoToProtoOpenRouter(config.planModeAnthropicModelInfo),
 		planModeAnthropicCustomModelEnabled: config.planModeAnthropicCustomModelEnabled,
+		planModeAnthropicBaseUrl: config.planModeAnthropicBaseUrl,
 
 		// Act mode configurations
 		actModeApiProvider: config.actModeApiProvider ? convertApiProviderToProto(config.actModeApiProvider) : undefined,
@@ -608,6 +609,7 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		actModeVercelAiGatewayModelInfo: convertModelInfoToProtoOpenRouter(config.actModeVercelAiGatewayModelInfo),
 		actModeAnthropicModelInfo: convertModelInfoToProtoOpenRouter(config.actModeAnthropicModelInfo),
 		actModeAnthropicCustomModelEnabled: config.actModeAnthropicCustomModelEnabled,
+		actModeAnthropicBaseUrl: config.actModeAnthropicBaseUrl,
 	}
 }
 
@@ -749,6 +751,7 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		planModeVercelAiGatewayModelInfo: convertProtoToModelInfo(protoConfig.planModeVercelAiGatewayModelInfo),
 		planModeAnthropicModelInfo: convertProtoToModelInfo(protoConfig.planModeAnthropicModelInfo),
 		planModeAnthropicCustomModelEnabled: protoConfig.planModeAnthropicCustomModelEnabled,
+		planModeAnthropicBaseUrl: protoConfig.planModeAnthropicBaseUrl,
 
 		// Act mode configurations
 		actModeApiProvider:
@@ -796,5 +799,6 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		actModeVercelAiGatewayModelInfo: convertProtoToModelInfo(protoConfig.actModeVercelAiGatewayModelInfo),
 		actModeAnthropicModelInfo: convertProtoToModelInfo(protoConfig.actModeAnthropicModelInfo),
 		actModeAnthropicCustomModelEnabled: protoConfig.actModeAnthropicCustomModelEnabled,
+		actModeAnthropicBaseUrl: protoConfig.actModeAnthropicBaseUrl,
 	}
 }

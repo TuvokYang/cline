@@ -121,7 +121,7 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 	const customModelInfo = modeFields.anthropicModelInfo || anthropicModelInfoSaneDefaults
 
 	return (
-		<div>
+		<div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
 			<ApiKeyField
 				initialValue={apiConfiguration?.apiKey || ""}
 				onChange={(value) => handleFieldChange("apiKey", value)}
@@ -132,9 +132,15 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 			<RemotelyConfiguredInputWrapper hidden={remoteConfigSettings?.anthropicBaseUrl === undefined}>
 				<BaseUrlField
 					disabled={!!remoteConfigSettings?.anthropicBaseUrl}
-					initialValue={apiConfiguration?.anthropicBaseUrl}
+					initialValue={modeFields.anthropicBaseUrl}
 					label="Use custom base URL"
-					onChange={(value) => handleFieldChange("anthropicBaseUrl", value)}
+					onChange={(value) =>
+						handleModeFieldChange(
+							{ plan: "planModeAnthropicBaseUrl", act: "actModeAnthropicBaseUrl" },
+							value,
+							currentMode,
+						)
+					}
 					placeholder="Default: https://api.anthropic.com"
 					showLockIcon={!!remoteConfigSettings?.anthropicBaseUrl}
 				/>

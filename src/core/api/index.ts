@@ -83,7 +83,7 @@ function createHandlerForProvider(
 			return new AnthropicHandler({
 				onRetryAttempt: options.onRetryAttempt,
 				apiKey: options.apiKey,
-				anthropicBaseUrl: options.anthropicBaseUrl,
+				anthropicBaseUrl: mode === "plan" ? options.planModeAnthropicBaseUrl : options.actModeAnthropicBaseUrl,
 				apiModelId: mode === "plan" ? options.planModeApiModelId : options.actModeApiModelId,
 				anthropicModelInfo: mode === "plan" ? options.planModeAnthropicModelInfo : options.actModeAnthropicModelInfo,
 				reasoningEffort: mode === "plan" ? options.planModeReasoningEffort : options.actModeReasoningEffort,
