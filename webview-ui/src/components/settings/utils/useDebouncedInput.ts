@@ -21,11 +21,13 @@ export function useDebouncedInput<T>(initialValue: T, onChange: (value: T) => vo
 	// Sync local state when initialValue changes externally (e.g., when switching Plan/Act tabs)
 	useEffect(() => {
 		if (prevInitialValueRef.current !== initialValue) {
-			// Only overwrite if the user hasn't modified the value (prevents input bounce)
 			if (localValueRef.current === prevInitialValueRef.current) {
 				setLocalValue(initialValue)
+				prevInitialValueRef.current = initialValue
+			} else {
+				// User is editing — keep ref aligned so future external changes can still sync
+				prevInitialValueRef.current = localValueRef.current
 			}
-			prevInitialValueRef.current = initialValue
 		}
 	}, [initialValue])
 
