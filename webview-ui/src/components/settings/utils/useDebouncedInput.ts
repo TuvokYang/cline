@@ -7,7 +7,7 @@ import { useDebounceEffect } from "@/utils/useDebounceEffect"
  *
  * @param initialValue - The initial value for the input
  * @param onChange - Callback function to save the value (e.g., to backend)
- * @param debounceMs - Debounce delay in milliseconds (default: 500ms)
+ * @param debounceMs - Debounce delay in milliseconds (default: 100ms)
  * @returns A tuple of [currentValue, setValue] similar to useState
  */
 export function useDebouncedInput<T>(initialValue: T, onChange: (value: T) => void, debounceMs = 100): [T, (value: T) => void] {
