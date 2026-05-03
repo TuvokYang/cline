@@ -129,7 +129,7 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 			<RemotelyConfiguredInputWrapper hidden={remoteConfigSettings?.anthropicBaseUrl === undefined}>
 				<BaseUrlField
 					disabled={!!remoteConfigSettings?.anthropicBaseUrl}
-					initialValue={modeFields.anthropicBaseUrl}
+					initialValue={modeFields.anthropicBaseUrl ?? apiConfiguration?.anthropicBaseUrl}
 					label="Use custom base URL"
 					onChange={(value) =>
 						handleModeFieldChange(
