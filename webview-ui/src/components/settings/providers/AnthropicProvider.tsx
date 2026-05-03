@@ -87,33 +87,30 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 		const currentInfo = modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults }
 		const updatedInfo = { ...currentInfo, [field]: value }
 
-		handleFieldsChange({
-			planModeApiModelId: currentMode === "plan" ? modeFields.apiModelId : apiConfiguration?.planModeApiModelId,
-			actModeApiModelId: currentMode === "act" ? modeFields.apiModelId : apiConfiguration?.actModeApiModelId,
-			planModeAnthropicModelInfo: currentMode === "plan" ? updatedInfo : apiConfiguration?.planModeAnthropicModelInfo,
-			actModeAnthropicModelInfo: currentMode === "act" ? updatedInfo : apiConfiguration?.actModeAnthropicModelInfo,
-		})
+		handleModeFieldChange({ plan: "planModeAnthropicModelInfo", act: "actModeAnthropicModelInfo" }, updatedInfo, currentMode)
 	}
 
 	const handleToggleCustomModel = (checked: boolean) => {
 		setUseCustomModel(checked)
-		const modeModelIdKey = currentMode === "plan" ? "planModeApiModelId" : "actModeApiModelId"
-		const modeModelInfoKey = currentMode === "plan" ? "planModeAnthropicModelInfo" : "actModeAnthropicModelInfo"
-		const modeCustomEnabledKey =
-			currentMode === "plan" ? "planModeAnthropicCustomModelEnabled" : "actModeAnthropicCustomModelEnabled"
 		if (checked) {
 			// Initialize with sane defaults, keeping current model ID if set
 			handleFieldsChange({
-				[modeCustomEnabledKey]: true,
-				[modeModelIdKey]: modeFields.apiModelId || "custom-model",
-				[modeModelInfoKey]: modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults },
+				planModeAnthropicCustomModelEnabled: true,
+				actModeAnthropicCustomModelEnabled: true,
+				planModeApiModelId: modeFields.apiModelId || "custom-model",
+				actModeApiModelId: modeFields.apiModelId || "custom-model",
+				planModeAnthropicModelInfo: modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults },
+				actModeAnthropicModelInfo: modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults },
 			})
 		} else {
-			// Clear custom model info for CURRENT mode only, switch to first predefined model
+			// Clear custom model info for both modes, switch to first predefined model
 			handleFieldsChange({
-				[modeCustomEnabledKey]: false,
-				[modeModelInfoKey]: undefined,
-				[modeModelIdKey]: Object.keys(anthropicModels)[0],
+				planModeAnthropicCustomModelEnabled: false,
+				actModeAnthropicCustomModelEnabled: false,
+				planModeAnthropicModelInfo: undefined,
+				actModeAnthropicModelInfo: undefined,
+				planModeApiModelId: Object.keys(anthropicModels)[0],
+				actModeApiModelId: Object.keys(anthropicModels)[0],
 			})
 		}
 	}
