@@ -55,8 +55,8 @@ interface AnthropicProviderProps {
  * The Anthropic provider configuration component
  */
 export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: AnthropicProviderProps) => {
-	const { apiConfiguration, remoteConfigSettings } = useExtensionState()
-	const { handleFieldChange, handleFieldsChange, handleModeFieldChange } = useApiConfigurationHandlers()
+	const { apiConfiguration, remoteConfigSettings, planActSeparateModelsSetting } = useExtensionState()
+	const { handleFieldChange, handleFieldsChange, handleModeFieldChange, handleModeFieldsChange } = useApiConfigurationHandlers()
 	const modeFields = getModeSpecificFields(apiConfiguration, currentMode)
 
 	const [useCustomModel, setUseCustomModel] = useState(!!modeFields.anthropicCustomModelEnabled)
@@ -92,27 +92,17 @@ export const AnthropicProvider = ({ showModelOptions, isPopup, currentMode }: An
 
 	const handleToggleCustomModel = (checked: boolean) => {
 		setUseCustomModel(checked)
-		if (checked) {
-			// Initialize with sane defaults, keeping current model ID if set
-			handleFieldsChange({
-				planModeAnthropicCustomModelEnabled: true,
-				actModeAnthropicCustomModelEnabled: true,
-				planModeApiModelId: modeFields.apiModelId || "custom-model",
-				actModeApiModelId: modeFields.apiModelId || "custom-model",
-				planModeAnthropicModelInfo: modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults },
-				actModeAnthropicModelInfo: modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults },
-			})
-		} else {
-			// Clear custom model info for both modes, switch to first predefined model
-			handleFieldsChange({
-				planModeAnthropicCustomModelEnabled: false,
-				actModeAnthropicCustomModelEnabled: false,
-				planModeAnthropicModelInfo: undefined,
-				actModeAnthropicModelInfo: undefined,
-				planModeApiModelId: Object.keys(anthropicModels)[0],
-				actModeApiModelId: Object.keys(anthropicModels)[0],
-			})
-		}
+		const modelId = checked ? modeFields.apiModelId || "custom-model" : Object.keys(anthropicModels)[0]
+		const modelInfo = checked ? modeFields.anthropicModelInfo || { ...anthropicModelInfoSaneDefaults } : undefined
+		handleModeFieldsChange(
+			{
+				customEnabled: { plan: "planModeAnthropicCustomModelEnabled", act: "actModeAnthropicCustomModelEnabled" },
+				modelId: { plan: "planModeApiModelId", act: "actModeApiModelId" },
+				modelInfo: { plan: "planModeAnthropicModelInfo", act: "actModeAnthropicModelInfo" },
+			},
+			{ customEnabled: checked, modelId, modelInfo },
+			currentMode,
+		)
 	}
 
 	const customModelInfo = modeFields.anthropicModelInfo || anthropicModelInfoSaneDefaults
