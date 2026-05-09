@@ -1,5 +1,7 @@
 # Changelog
 
+## [3.82.1]
+ - Custom Anthropic API
 ## [3.82.0]
 
 ### Added
