@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.82.7]
+
+### Added
+
+- DeepSeek V4 thinking mode support with reasoning_content pass-back for multi-turn conversations
+
 ## [3.82.5]
 
 ### Fixed
