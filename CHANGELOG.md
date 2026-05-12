@@ -1,5 +1,8 @@
 # Changelog
 
+## [3.82.2]
+ - Add DeepSeek V4 Support
+
 ## [3.82.1]
  - Custom Anthropic API
 ## [3.82.0]
@@ -14,7 +17,7 @@
 - Fix hook template JSON escaping.
 - Improve ripgrep file search error handling.
 
-### Changed
+### Chaged
 
 - Remove hardcoded model lists from docs.
 
