@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.82.3]
+
+### Fixed
+
+- Handle empty `reasoning_content` from DeepSeek API that caused false "Invalid API Response" errors.
+- Add `hasReceivedReasoning()` to ReasoningHandler to distinguish 'never received' from 'received but empty' reasoning deltas.
+
 ## [3.82.2]
  - Add DeepSeek V4 Support
 

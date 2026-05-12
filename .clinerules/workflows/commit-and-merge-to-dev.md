@@ -63,13 +63,3 @@ git merge <branch-name> --no-edit
 
 ```bash
 git push origin dev
-```
-
-### 7) Cleanup (optional)
-
-```bash
-# Delete local feature branch (after confirming)
-git branch -d <branch-name>
-
-# Delete remote feature branch
-git push origin --delete <branch-name>
