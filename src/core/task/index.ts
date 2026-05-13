@@ -270,7 +270,7 @@ export class Task {
 	private readonly remoteWorkspaceDetectionPromise: Promise<void>
 	private readonly presentationScheduler: TaskPresentationScheduler
 	private readonly presentationSchedulingDisabled = isPresentationSchedulingDisabled()
-	private lastLoggedPresentationTrigger = ""
+	private lastLoggedPresentationTrigger = 0
 
 	constructor(params: TaskParams) {
 		const {
@@ -633,9 +633,9 @@ export class Task {
 		}
 
 		// Only log when trigger or priority changes to avoid log spam during streaming
-		const logKey = `${trigger}:${priority}`
-		if (this.lastLoggedPresentationTrigger !== logKey) {
-			this.lastLoggedPresentationTrigger = logKey
+		const currentSecond = Math.floor(Date.now() / 1000)
+		if (this.lastLoggedPresentationTrigger !== currentSecond) {
+			this.lastLoggedPresentationTrigger = currentSecond
 			Logger.debug(`[Task ${this.taskId}] schedule assistant presentation (${trigger}, ${priority})`)
 		}
 		this.presentationScheduler.requestFlush(priority)
@@ -2800,7 +2800,7 @@ export class Task {
 			await this.diffViewProvider.reset()
 			this.streamHandler.reset()
 			this.presentationScheduler.reset()
-			this.lastLoggedPresentationTrigger = ""
+			this.lastLoggedPresentationTrigger = 0
 			this.taskState.toolUseIdMap.clear()
 
 			const { toolUseHandler, reasonsHandler } = this.streamHandler.getHandlers()
