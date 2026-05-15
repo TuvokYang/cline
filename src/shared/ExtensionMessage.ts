@@ -47,7 +47,12 @@ export interface ExtensionState {
 	preferredLanguage?: string
 	mode: Mode
 	checkpointManagerErrorMessage?: string
-	clineMessages: ClineMessage[]
+	/** Task description displayed in fixed header; sent once, never repeated */
+	taskTitleMessage?: ClineMessage
+	/** Total count of body messages (excluding task) for virtuoso totalCount */
+	totalMessageCount?: number
+	/** Index of the first item in the current window within the full message list */
+	firstItemIndex?: number
 	currentTaskItem?: HistoryItem
 	currentFocusChainChecklist?: string | null
 	mcpMarketplaceEnabled?: boolean
@@ -113,6 +118,16 @@ export interface ExtensionState {
 	banners?: BannerCardData[]
 	welcomeBanners?: BannerCardData[]
 	openAiCodexIsAuthenticated?: boolean
+	/** API usage metrics, computed from all messages by the backend */
+	apiMetrics?: {
+		totalTokensIn: number
+		totalTokensOut: number
+		totalCacheWrites?: number
+		totalCacheReads?: number
+		totalCost: number
+	}
+	/** Total tokens from the last API request for context window progress bar */
+	lastApiReqTotalTokens?: number
 }
 
 export interface ClineMessage {

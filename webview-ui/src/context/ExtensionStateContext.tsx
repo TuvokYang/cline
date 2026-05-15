@@ -1,13 +1,14 @@
 import { DEFAULT_AUTO_APPROVAL_SETTINGS } from "@shared/AutoApprovalSettings"
 import { findLastIndex } from "@shared/array"
 import { DEFAULT_BROWSER_SETTINGS } from "@shared/BrowserSettings"
-import { DEFAULT_PLATFORM, type ExtensionState } from "@shared/ExtensionMessage"
+import { type ClineMessage, DEFAULT_PLATFORM, type ExtensionState } from "@shared/ExtensionMessage"
 import { DEFAULT_FOCUS_CHAIN_SETTINGS } from "@shared/FocusChainSettings"
 import { DEFAULT_MCP_DISPLAY_MODE } from "@shared/McpDisplayMode"
 import type { UserInfo } from "@shared/proto/cline/account"
 import { EmptyRequest } from "@shared/proto/cline/common"
 import type { OpenRouterCompatibleModelInfo } from "@shared/proto/cline/models"
 import { OnboardingModelGroup, type TerminalProfile } from "@shared/proto/cline/state"
+import { FetchMessageRequest } from "@shared/proto/cline/task"
 import { convertProtoToClineMessage } from "@shared/proto-conversions/cline-message"
 import { convertProtoMcpServersToMcpServers } from "@shared/proto-conversions/mcp/mcp-server-conversion"
 import { fromProtobufModels } from "@shared/proto-conversions/models/typeConversion"
@@ -26,9 +27,20 @@ import {
 } from "../../../src/shared/api"
 import { Environment } from "../../../src/shared/config-types"
 import type { McpMarketplaceCatalog, McpServer, McpViewTab } from "../../../src/shared/mcp"
-import { McpServiceClient, ModelsServiceClient, StateServiceClient, UiServiceClient } from "../services/grpc-client"
+import {
+	McpServiceClient,
+	ModelsServiceClient,
+	StateServiceClient,
+	TaskServiceClient,
+	UiServiceClient,
+} from "../services/grpc-client"
+
+// Sliding window constants (adjustable)
+const MAX_COUNT = 300 // maximum messages in the window
 
 export interface ExtensionStateContextType extends ExtensionState {
+	clineMessages: ClineMessage[]
+	setClineMessages: React.Dispatch<React.SetStateAction<ClineMessage[]>>
 	didHydrateState: boolean
 	showWelcome: boolean
 	onboardingModels: OnboardingModelGroup | undefined
@@ -86,6 +98,10 @@ export interface ExtensionStateContextType extends ExtensionState {
 	setExpandTaskHeader: (value: boolean) => void
 	setShowWelcome: (value: boolean) => void
 	setOnboardingModels: (value: OnboardingModelGroup | undefined) => void
+
+	// Sliding window
+	firstItemIndex: number
+	setFirstItemIndex: React.Dispatch<React.SetStateAction<number>>
 
 	// Refresh functions
 	refreshClineModels: () => void
@@ -228,7 +244,6 @@ export const ExtensionStateContextProvider: React.FC<{
 
 	const [state, setState] = useState<ExtensionState>({
 		version: "",
-		clineMessages: [],
 		taskHistory: [],
 		shouldShowAnnouncement: false,
 		autoApprovalSettings: DEFAULT_AUTO_APPROVAL_SETTINGS,
@@ -293,6 +308,31 @@ export const ExtensionStateContextProvider: React.FC<{
 	})
 	const [expandTaskHeader, setExpandTaskHeader] = useState(true)
 	const [didHydrateState, setDidHydrateState] = useState(false)
+
+	// Atomic sliding window state via React 18 auto-batching
+	const [clineMessages, setClineMessages] = useState<ClineMessage[]>([])
+	const [firstItemIndex, setFirstItemIndex] = useState(0)
+
+	const prevTotalRef = useRef(0)
+
+	// Reset when task is cleared; bootstrap initial fetch on task switch
+	useEffect(() => {
+		const total = state.totalMessageCount ?? 0
+		if (total === 0) {
+			setClineMessages([])
+			setFirstItemIndex(0)
+		}
+		if (prevTotalRef.current === 0 && total > 0 && clineMessages.length === 0) {
+			TaskServiceClient.fetchMessage(FetchMessageRequest.create({ referenceIndex: -1, count: 200 }))
+				.then((resp) => {
+					const converted = (resp.messages as any[]).map((m) => convertProtoToClineMessage(m))
+					setClineMessages(converted)
+					setFirstItemIndex(Math.max(0, resp.startIndex))
+				})
+				.catch(() => {})
+		}
+		prevTotalRef.current = total
+	}, [state.totalMessageCount, clineMessages.length])
 
 	const [showWelcome, setShowWelcome] = useState(false)
 	const [onboardingModels, setOnboardingModels] = useState<OnboardingModelGroup | undefined>(undefined)
@@ -363,12 +403,6 @@ export const ExtensionStateContextProvider: React.FC<{
 							const incomingVersion = stateData.autoApprovalSettings?.version ?? 1
 							const currentVersion = prevState.autoApprovalSettings?.version ?? 1
 							const shouldUpdateAutoApproval = incomingVersion > currentVersion
-							// HACK: Preserve clineMessages if currentTaskItem is the same
-							if (stateData.currentTaskItem?.id === prevState.currentTaskItem?.id) {
-								stateData.clineMessages = stateData.clineMessages?.length
-									? stateData.clineMessages
-									: prevState.clineMessages
-							}
 
 							const newState = {
 								...stateData,
@@ -392,10 +426,9 @@ export const ExtensionStateContextProvider: React.FC<{
 						})
 					} catch (error) {
 						console.error("Error parsing state JSON:", error)
-						console.log("[DEBUG] ERR getting state", error)
 					}
 				}
-				console.log('[DEBUG] ended "got subscribed state"')
+				console.debug('ended "got subscribed state"')
 			},
 			onError: (error) => {
 				console.error("Error in state subscription:", error)
@@ -410,7 +443,7 @@ export const ExtensionStateContextProvider: React.FC<{
 			{},
 			{
 				onResponse: () => {
-					console.log("[DEBUG] Received mcpButtonClicked event from gRPC stream")
+					console.debug("Received mcpButtonClicked event from gRPC stream")
 					navigateToMcp()
 				},
 				onError: (error) => {
@@ -428,7 +461,7 @@ export const ExtensionStateContextProvider: React.FC<{
 			{
 				onResponse: () => {
 					// When history button is clicked, navigate to history view
-					console.log("[DEBUG] Received history button clicked event from gRPC stream")
+					console.debug("Received history button clicked event from gRPC stream")
 					navigateToHistory()
 				},
 				onError: (error) => {
@@ -446,7 +479,7 @@ export const ExtensionStateContextProvider: React.FC<{
 			{
 				onResponse: () => {
 					// When chat button is clicked, navigate to chat
-					console.log("[DEBUG] Received chat button clicked event from gRPC stream")
+					console.debug("Received chat button clicked event from gRPC stream")
 					navigateToChat()
 				},
 				onError: (error) => {
@@ -459,7 +492,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		// Subscribe to MCP servers updates
 		mcpServersSubscriptionRef.current = McpServiceClient.subscribeToMcpServers(EmptyRequest.create(), {
 			onResponse: (response) => {
-				console.log("[DEBUG] Received MCP servers update from gRPC stream")
+				console.debug("Received MCP servers update from gRPC stream")
 				if (response.mcpServers) {
 					setMcpServers(convertProtoMcpServersToMcpServers(response.mcpServers))
 				}
@@ -514,15 +547,14 @@ export const ExtensionStateContextProvider: React.FC<{
 					}
 
 					const partialMessage = convertProtoToClineMessage(protoMessage)
-					setState((prevState) => {
-						// worth noting it will never be possible for a more up-to-date message to be sent here or in normal messages post since the presentAssistantContent function uses lock
-						const lastIndex = findLastIndex(prevState.clineMessages, (msg) => msg.ts === partialMessage.ts)
+					setClineMessages((prev) => {
+						const lastIndex = findLastIndex(prev, (msg) => msg.ts === partialMessage.ts)
 						if (lastIndex !== -1) {
-							const newClineMessages = [...prevState.clineMessages]
-							newClineMessages[lastIndex] = partialMessage
-							return { ...prevState, clineMessages: newClineMessages }
+							const next = [...prev]
+							next[lastIndex] = partialMessage
+							return next
 						}
-						return prevState
+						return [...prev, partialMessage]
 					})
 				} catch (error) {
 					console.error("Failed to process partial message:", error, protoMessage)
@@ -532,14 +564,14 @@ export const ExtensionStateContextProvider: React.FC<{
 				console.error("Error in partialMessage subscription:", error)
 			},
 			onComplete: () => {
-				console.log("[DEBUG] partialMessage subscription completed")
+				console.debug("partialMessage subscription completed")
 			},
 		})
 
 		// Subscribe to MCP marketplace catalog updates
 		mcpMarketplaceUnsubscribeRef.current = McpServiceClient.subscribeToMcpMarketplaceCatalog(EmptyRequest.create({}), {
 			onResponse: (catalog) => {
-				console.log("[DEBUG] Received MCP marketplace catalog update from gRPC stream")
+				console.debug("Received MCP marketplace catalog update from gRPC stream")
 				setMcpMarketplaceCatalog(catalog)
 			},
 			onError: (error) => {
@@ -584,7 +616,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		// Initialize webview using gRPC
 		UiServiceClient.initializeWebview(EmptyRequest.create({}))
 			.then(() => {
-				console.log("[DEBUG] Webview initialization completed via gRPC")
+				console.debug("Webview initialization completed via gRPC")
 			})
 			.catch((error) => {
 				console.error("Failed to initialize webview via gRPC:", error)
@@ -594,7 +626,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		accountButtonClickedSubscriptionRef.current = UiServiceClient.subscribeToAccountButtonClicked(EmptyRequest.create(), {
 			onResponse: () => {
 				// When account button is clicked, navigate to account view
-				console.log("[DEBUG] Received account button clicked event from gRPC stream")
+				console.debug("Received account button clicked event from gRPC stream")
 				navigateToAccount()
 			},
 			onError: (error) => {
@@ -785,6 +817,7 @@ export const ExtensionStateContextProvider: React.FC<{
 
 	const contextValue: ExtensionStateContextType = {
 		...state,
+		clineMessages,
 		didHydrateState,
 		showWelcome,
 		onboardingModels,
@@ -811,6 +844,8 @@ export const ExtensionStateContextProvider: React.FC<{
 		showAccount,
 		showWorktrees,
 		showAnnouncement,
+		firstItemIndex,
+		setFirstItemIndex,
 		globalClineRulesToggles: state.globalClineRulesToggles || {},
 		localClineRulesToggles: state.localClineRulesToggles || {},
 		localCursorRulesToggles: state.localCursorRulesToggles || {},
@@ -920,6 +955,7 @@ export const ExtensionStateContextProvider: React.FC<{
 		setUserInfo: (userInfo?: UserInfo) => setState((prevState) => ({ ...prevState, userInfo })),
 		expandTaskHeader,
 		setExpandTaskHeader,
+		setClineMessages,
 	}
 
 	return <ExtensionStateContext.Provider value={contextValue}>{children}</ExtensionStateContext.Provider>

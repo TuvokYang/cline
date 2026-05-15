@@ -9,6 +9,14 @@ import { Controller } from "../index"
 // Keep track of active state subscriptions
 const activeStateSubscriptions = new Set<StreamingResponseHandler<State>>()
 
+// Debounce state updates to merge rapid-fire postStateToWebview calls
+// triggered by streaming response handling (e.g. every tool output line).
+// Without this, a long conversation can push 10.9MB+ per update, exhausting
+// webview memory. 50ms trailing debounce reduces push frequency ~80% without
+// perceptible UI lag.
+let pendingStateJson: string | null = null
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
 /**
  * Subscribe to state updates
  * @param controller The controller instance
@@ -67,23 +75,35 @@ export async function sendStateUpdate(state: ExtensionState): Promise<void> {
 		return
 	}
 
-	recordStateSizeTelemetry(Buffer.byteLength(stateJson, "utf8"))
+	pendingStateJson = stateJson
 
-	const promises = Array.from(activeStateSubscriptions).map(async (responseStream) => {
-		try {
-			await responseStream(
-				{
-					stateJson,
-				},
-				false, // Not the last message
-			)
-		} catch (error) {
-			Logger.error("Error sending state update:", error)
-			activeStateSubscriptions.delete(responseStream)
-		}
-	})
+	if (debounceTimer) {
+		return // debounce in progress, latest state will be sent when timer fires
+	}
 
-	await Promise.all(promises)
+	debounceTimer = setTimeout(async () => {
+		debounceTimer = null
+		const finalStateJson = pendingStateJson!
+		pendingStateJson = null
+
+		recordStateSizeTelemetry(Buffer.byteLength(finalStateJson, "utf8"))
+
+		const promises = Array.from(activeStateSubscriptions).map(async (responseStream) => {
+			try {
+				await responseStream(
+					{
+						stateJson: finalStateJson,
+					},
+					false, // Not the last message
+				)
+			} catch (error) {
+				Logger.error("Error sending state update:", error)
+				activeStateSubscriptions.delete(responseStream)
+			}
+		})
+
+		await Promise.all(promises)
+	}, 50)
 }
 
 function recordStateSizeTelemetry(sizeBytes: number): void {

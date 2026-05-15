@@ -4,6 +4,7 @@ package cline;
 
 import "cline/common.proto";
 import "cline/state.proto";
+import "cline/ui.proto";
 
 option go_package = "github.com/cline/grpc-go/cline";
 option java_multiple_files = true;
@@ -42,6 +43,8 @@ service TaskService {
   rpc deleteAllTaskHistory(EmptyRequest) returns (DeleteAllTaskHistoryCount);
   // Explains changes with AI and adds inline comments to the diff view
   rpc explainChanges(ExplainChangesRequest) returns (Empty);
+  // Fetches messages for virtual scrolling
+  rpc fetchMessage(FetchMessageRequest) returns (FetchMessageResponse);
 }
 
 // Request message for creating a new task
@@ -131,4 +134,22 @@ message ExplainChangesRequest {
   Metadata metadata = 1;
   // Timestamp of the completion message to explain changes for
   int64 message_ts = 2;
+}
+
+// Request for fetching messages (for virtual scrolling)
+message FetchMessageRequest {
+  Metadata metadata = 1;
+  // Absolute index in the full message list (excluding task message)
+  int64 reference_index = 2;
+  // Number of messages to fetch starting from reference_index
+  int32 count = 3;
+}
+
+// Response for fetchMessage
+message FetchMessageResponse {
+  repeated cline.ClineMessage messages = 1;
+  // Total number of messages (excluding task) for virtuoso totalCount
+  int32 total_count = 2;
+  // Absolute index of the first message in the returned messages array
+  int32 start_index = 3;
 }

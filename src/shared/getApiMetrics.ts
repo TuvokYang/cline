@@ -1,6 +1,6 @@
 import { ClineMessage } from "./ExtensionMessage"
 
-interface ApiMetrics {
+export interface ApiMetrics {
 	totalTokensIn: number
 	totalTokensOut: number
 	totalCacheWrites?: number
@@ -96,4 +96,21 @@ export function getLastApiReqTotalTokens(messages: ClineMessage[]): number {
 		}
 	}
 	return 0
+}
+
+/**
+ * Gets the last task_progress text from the message list.
+ * Used as a fallback when taskState.currentFocusChainChecklist is null.
+ *
+ * @param messages - An array of ClineMessage objects to search.
+ * @returns The text of the last task_progress message, or null if none found.
+ */
+export function getLastTaskProgressText(messages: ClineMessage[]): string | null {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i]
+		if (m.type === "say" && m.say === "task_progress" && m.text) {
+			return m.text
+		}
+	}
+	return null
 }

@@ -2,7 +2,6 @@ import { combineApiRequests } from "@shared/combineApiRequests"
 import { combineCommandSequences } from "@shared/combineCommandSequences"
 import { combineErrorRetryMessages } from "@shared/combineErrorRetryMessages"
 import { combineHookSequences } from "@shared/combineHookSequences"
-import { getApiMetrics, getLastApiReqTotalTokens } from "@shared/getApiMetrics"
 import { BooleanRequest, StringRequest } from "@shared/proto/cline/common"
 import { useCallback, useEffect, useMemo } from "react"
 import { useMount } from "react-use"
@@ -54,22 +53,23 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		currentFocusChainChecklist,
 		focusChainSettings,
 		hooksEnabled,
+		apiMetrics,
+		lastApiReqTotalTokens: lastApiReqTotalTokensFromState,
 	} = useExtensionState()
 	const isProdHostedApp = userInfo?.apiBaseUrl === "https://app.cline.bot"
 	const shouldShowQuickWins = isProdHostedApp && (!taskHistory || taskHistory.length < QUICK_WINS_HISTORY_THRESHOLD)
 
-	//const task = messages.length > 0 ? (messages[0].say === "task" ? messages[0] : undefined) : undefined) : undefined
-	const task = useMemo(() => messages.at(0), [messages]) // leaving this less safe version here since if the first message is not a task, then the extension is in a bad state and needs to be debugged (see Cline.abort)
+	// task is no longer at index 0 — it's sent separately via taskMessage and displayed in fixed header
+	const { taskTitleMessage } = useExtensionState()
+	const task = taskTitleMessage
 	const modifiedMessages = useMemo(() => {
-		const slicedMessages = messages.slice(1)
-		// Only combine hook sequences if hooks are enabled
-		const withHooks = hooksEnabled ? combineHookSequences(slicedMessages) : slicedMessages
+		// task is separate (taskMessage) — no need to slice
+		const withHooks = hooksEnabled ? combineHookSequences(messages) : messages
 		return combineErrorRetryMessages(combineApiRequests(combineCommandSequences(withHooks)))
 	}, [messages, hooksEnabled])
-	// has to be after api_req_finished are all reduced into api_req_started messages
-	const apiMetrics = useMemo(() => getApiMetrics(modifiedMessages), [modifiedMessages])
-
-	const lastApiReqTotalTokens = useMemo(() => getLastApiReqTotalTokens(modifiedMessages) || undefined, [modifiedMessages])
+	// apiMetrics and lastApiReqTotalTokens are computed by the backend
+	// and delivered via subscribeToState, independent of the message window.
+	const lastApiReqTotalTokens = lastApiReqTotalTokensFromState
 
 	// Use custom hooks for state management
 	const chatState = useChatState(messages)
@@ -301,16 +301,8 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 		if (!focusChainSettings.enabled) {
 			return undefined
 		}
-
-		// First check if we have a current focus chain list from the extension state
-		if (currentFocusChainChecklist) {
-			return currentFocusChainChecklist
-		}
-
-		// Fall back to the last task_progress message if no state focus chain list
-		const lastProgressMessage = [...modifiedMessages].reverse().find((message) => message.say === "task_progress")
-		return lastProgressMessage?.text
-	}, [focusChainSettings.enabled, modifiedMessages, currentFocusChainChecklist])
+		return currentFocusChainChecklist || undefined
+	}, [focusChainSettings.enabled, currentFocusChainChecklist])
 
 	const showFocusChainPlaceholder = useMemo(() => {
 		// Show placeholder whenever focus chain is enabled and no checklist exists yet.
@@ -335,7 +327,7 @@ const ChatView = ({ isHidden, showAnnouncement, hideAnnouncement, showHistoryVie
 				{showNavbar && <Navbar />}
 				{task ? (
 					<TaskSection
-						apiMetrics={apiMetrics}
+						apiMetrics={apiMetrics ?? { totalTokensIn: 0, totalTokensOut: 0, totalCost: 0 }}
 						lastApiReqTotalTokens={lastApiReqTotalTokens}
 						lastProgressMessageText={lastProgressMessageText}
 						messageHandlers={messageHandlers}

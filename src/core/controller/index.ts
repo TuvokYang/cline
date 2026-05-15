@@ -10,7 +10,7 @@ import { ClineAccountService } from "@services/account/ClineAccountService"
 import { McpHub } from "@services/mcp/McpHub"
 import type { ApiProvider, ModelInfo } from "@shared/api"
 import type { ChatContent } from "@shared/ChatContent"
-import type { ExtensionState, Platform } from "@shared/ExtensionMessage"
+import type { ClineMessage, ExtensionState, Platform } from "@shared/ExtensionMessage"
 import type { HistoryItem } from "@shared/HistoryItem"
 import type { McpMarketplaceCatalog, McpMarketplaceItem } from "@shared/mcp"
 import { type Settings } from "@shared/storage/state-keys"
@@ -332,6 +332,7 @@ export class Controller {
 			this.task.startTask(task, images, files)
 		}
 
+		await this.postStateToWebview()
 		return this.task.taskId
 	}
 
@@ -898,9 +899,15 @@ export class Controller {
 
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
 		// Spread to create new array reference - React needs this to detect changes in useEffect dependencies
-		const clineMessages = [...(this.task?.messageStateHandler.getClineMessages() || [])]
+		const clineMessages = [] as ClineMessage[]
+		const rawMessages = [...(this.task?.messageStateHandler.getClineMessages() || [])]
+		// Separate task header message from body messages.
+		const taskTitleMessage = rawMessages.find((m) => m.say === "task") ?? rawMessages.at(0)
+		const bodyMessages = rawMessages.filter((m) => m !== taskTitleMessage)
+		const totalMessageCount = bodyMessages.length
+		// firstItemIndex is managed by fetchMessage; default to latest window on init
+		const firstItemIndex = Math.max(0, totalMessageCount - 100)
 		const checkpointManagerErrorMessage = this.task?.taskState.checkpointManagerErrorMessage
-
 		const processedTaskHistory = (taskHistory || [])
 			.filter((item) => item.ts && item.task)
 			.sort((a, b) => b.ts - a.ts)
@@ -920,12 +927,29 @@ export class Controller {
 		const { openAiCodexOAuthManager } = await import("@/integrations/openai-codex/oauth")
 		const openAiCodexIsAuthenticated = await openAiCodexOAuthManager.isAuthenticated()
 
+		// Compute apiMetrics from all messages (not window slice).
+		// These are passed through subscribeToState so the frontend
+		// renders task header stats without depending on clineMessages.
+		const allMessages = this.task?.messageStateHandler.getClineMessages() || []
+		const { getApiMetrics, getLastApiReqTotalTokens, getLastTaskProgressText } = await import("@shared/getApiMetrics")
+		const apiMetrics = getApiMetrics(allMessages)
+		const lastApiReqTotalTokens = getLastApiReqTotalTokens(allMessages)
+
+		// If currentFocusChainChecklist is null, fall back to searching
+		// the full message list (not the window slice) for task_progress.
+		const checklistFromTaskState = this.task?.taskState.currentFocusChainChecklist || null
+		const checklistForState = checklistFromTaskState || getLastTaskProgressText(allMessages)
+
 		return {
 			version,
 			apiConfiguration,
 			currentTaskItem,
-			clineMessages,
-			currentFocusChainChecklist: this.task?.taskState.currentFocusChainChecklist || null,
+			taskTitleMessage,
+			totalMessageCount,
+			firstItemIndex,
+			apiMetrics,
+			lastApiReqTotalTokens,
+			currentFocusChainChecklist: checklistForState,
 			checkpointManagerErrorMessage,
 			autoApprovalSettings,
 			browserSettings,
@@ -1014,6 +1038,7 @@ export class Controller {
 		}
 		await this.task?.abortTask()
 		this.task = undefined // removes reference to it, so once promises end it will be garbage collected
+		await this.postStateToWebview()
 	}
 
 	// Caching mechanism to keep track of webview messages + API conversation history per provider instance

@@ -1,13 +1,23 @@
 import type { ClineMessage } from "@shared/ExtensionMessage"
+import { FetchMessageRequest } from "@shared/proto/cline/task"
+import { convertProtoToClineMessage } from "@shared/proto-conversions/cline-message"
 import type React from "react"
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react"
 import { Virtuoso } from "react-virtuoso"
 import { StickyUserMessage } from "@/components/chat/task-header/StickyUserMessage"
 import { useExtensionState } from "@/context/ExtensionStateContext"
 import { cn } from "@/lib/utils"
+import { TaskServiceClient } from "@/services/grpc-client"
 import type { ChatState, MessageHandlers, ScrollBehavior } from "../../types/chatTypes"
 import { isToolGroup } from "../../utils/messageUtils"
 import { createMessageRenderer } from "../messages/MessageRenderer"
+
+const LOAD_THRESHOLD = 100
+const LOAD_COUNT = 200
+const ROW_LOAD_THRESHOLD = 8
+
+const MAX_SIDE_BUFFER = 300
+const TRIM_SIDE_TARGET = 180
 
 interface MessagesAreaProps {
 	task: ClineMessage
@@ -18,10 +28,21 @@ interface MessagesAreaProps {
 	messageHandlers: MessageHandlers
 }
 
-/**
- * The scrollable messages area with virtualized list
- * Handles rendering of chat rows and browser sessions
- */
+type RenderRow = {
+	row: ClineMessage | ClineMessage[]
+	startMessageIndex: number
+	endMessageIndex: number
+	startMessageTs?: number
+	endMessageTs?: number
+}
+
+type ScrollDirection = "up" | "down" | "none"
+
+type PendingAnchor = {
+	ts: number
+	align: "start" | "center" | "end"
+}
+
 export const MessagesArea: React.FC<MessagesAreaProps> = ({
 	task,
 	groupedMessages,
@@ -30,7 +51,22 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 	chatState,
 	messageHandlers,
 }) => {
-	const { clineMessages } = useExtensionState()
+	const { clineMessages, setClineMessages, totalMessageCount, firstItemIndex, setFirstItemIndex } = useExtensionState()
+
+	const firstItemIndexRef = useRef(firstItemIndex)
+	const clineMessagesLengthRef = useRef(clineMessages.length)
+	const lastViewportCenterRef = useRef<number | null>(null)
+	const inflightRef = useRef<Set<string>>(new Set())
+	const pendingAnchorRef = useRef<PendingAnchor | null>(null)
+
+	useEffect(() => {
+		firstItemIndexRef.current = firstItemIndex
+	}, [firstItemIndex])
+
+	useEffect(() => {
+		clineMessagesLengthRef.current = clineMessages.length
+	}, [clineMessages.length])
+
 	const lastRawMessage = useMemo(() => clineMessages.at(-1), [clineMessages])
 
 	const {
@@ -41,106 +77,141 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 		setIsAtBottom,
 		setShowScrollToBottom,
 		disableAutoScrollRef,
-		handleRangeChanged,
 		scrolledPastUserMessage,
-		scrollToMessage,
 	} = scrollBehavior
 
-	// Find the index of the scrolled past user message for scrolling
-	const scrolledPastUserMessageIndex = useMemo(() => {
-		if (!scrolledPastUserMessage) {
-			return -1
-		}
-		return clineMessages.findIndex((msg) => msg.ts === scrolledPastUserMessage.ts)
-	}, [clineMessages, scrolledPastUserMessage])
+	const messageIndexByTs = useMemo(() => {
+		const map = new Map<number, number>()
 
-	// Handler to scroll to the scrolled past user message
+		clineMessages.forEach((msg, offset) => {
+			map.set(msg.ts, firstItemIndex + offset)
+		})
+
+		return map
+	}, [clineMessages, firstItemIndex])
+
+	const renderRows = useMemo<RenderRow[]>(() => {
+		let fallbackIndex = firstItemIndex
+
+		return groupedMessages.map((row) => {
+			const rowMessages = Array.isArray(row) ? row : [row]
+
+			const mappedIndexes = rowMessages
+				.map((msg) => messageIndexByTs.get(msg.ts))
+				.filter((index): index is number => typeof index === "number")
+
+			const startMessageIndex = mappedIndexes.length > 0 ? Math.min(...mappedIndexes) : fallbackIndex
+			const endMessageIndex =
+				mappedIndexes.length > 0 ? Math.max(...mappedIndexes) : startMessageIndex + rowMessages.length - 1
+
+			fallbackIndex = Math.max(fallbackIndex, endMessageIndex + 1)
+
+			return {
+				row,
+				startMessageIndex,
+				endMessageIndex,
+				startMessageTs: rowMessages.at(0)?.ts,
+				endMessageTs: rowMessages.at(-1)?.ts,
+			}
+		})
+	}, [groupedMessages, messageIndexByTs, firstItemIndex])
+
+	const visibleGroupedMessages = useMemo<(ClineMessage | ClineMessage[])[]>(
+		() => renderRows.map((renderRow) => renderRow.row),
+		[renderRows],
+	)
+
+	const findRowOffsetByMessageTs = useCallback(
+		(ts: number) => {
+			return renderRows.findIndex((renderRow) => {
+				if (Array.isArray(renderRow.row)) {
+					return renderRow.row.some((msg) => msg.ts === ts)
+				}
+
+				return renderRow.row.ts === ts
+			})
+		},
+		[renderRows],
+	)
+
+	const scrollToRowOffset = useCallback(
+		(index: number, align: "start" | "center" | "end" = "start", behavior: "auto" | "smooth" = "smooth") => {
+			virtuosoRef.current?.scrollToIndex({
+				index,
+				align,
+				behavior,
+			})
+		},
+		[virtuosoRef],
+	)
+
+	useLayoutEffect(() => {
+		const pendingAnchor = pendingAnchorRef.current
+		if (!pendingAnchor) return
+		if (renderRows.length === 0) return
+
+		const rowOffset = findRowOffsetByMessageTs(pendingAnchor.ts)
+		if (rowOffset < 0) return
+
+		pendingAnchorRef.current = null
+		scrollToRowOffset(rowOffset, pendingAnchor.align, "auto")
+	}, [renderRows.length, findRowOffsetByMessageTs, scrollToRowOffset])
+
+	const scrolledPastUserMessageRowOffset = useMemo(() => {
+		if (!scrolledPastUserMessage) return -1
+		return findRowOffsetByMessageTs(scrolledPastUserMessage.ts)
+	}, [findRowOffsetByMessageTs, scrolledPastUserMessage])
+
 	const handleScrollToUserMessage = useCallback(() => {
-		if (scrollToMessage && scrolledPastUserMessageIndex >= 0) {
-			scrollToMessage(scrolledPastUserMessageIndex)
+		if (scrolledPastUserMessageRowOffset >= 0) {
+			scrollToRowOffset(scrolledPastUserMessageRowOffset, "center")
 		}
-	}, [scrollToMessage, scrolledPastUserMessageIndex])
+	}, [scrolledPastUserMessageRowOffset, scrollToRowOffset])
 
 	const { expandedRows, inputValue, setActiveQuote } = chatState
-	const lastVisibleRow = useMemo(() => groupedMessages.at(-1), [groupedMessages])
+
+	const lastVisibleRow = useMemo(() => visibleGroupedMessages.at(-1), [visibleGroupedMessages])
+
 	const lastVisibleMessage = useMemo(() => {
 		const lastRow = lastVisibleRow
-		if (!lastRow) {
-			return undefined
-		}
+		if (!lastRow) return undefined
 		return Array.isArray(lastRow) ? lastRow.at(-1) : lastRow
 	}, [lastVisibleRow])
 
-	// Show "Thinking..." until real content starts streaming.
-	// This is the sole early loading indicator - RequestStartRow does NOT duplicate it.
-	// Covers: pre-api_req_started (backend processing) AND post-api_req_started (waiting for model).
-	// Hides once reasoning, tools, text, or any other content message appears.
 	const isWaitingForResponse = useMemo(() => {
 		const lastMsg = modifiedMessages[modifiedMessages.length - 1]
 
-		// Never show thinking while waiting on user input (any ask state).
-		// This includes completion_result, tool approvals, followups, and resume asks.
-		if (lastRawMessage?.type === "ask") {
-			return false
-		}
-		// attempt_completion emits a final say("completion_result") before ask("completion_result").
-		// Treat that final completion message as non-waiting to avoid a brief footer flicker.
-		if (lastRawMessage?.type === "say" && lastRawMessage.say === "completion_result") {
-			return false
-		}
+		if (lastRawMessage?.type === "ask") return false
+		if (lastRawMessage?.type === "say" && lastRawMessage.say === "completion_result") return false
+
 		if (lastRawMessage?.type === "say" && lastRawMessage.say === "api_req_started") {
 			try {
 				const info = JSON.parse(lastRawMessage.text || "{}")
-				if (info.cancelReason === "user_cancelled") {
-					return false
-				}
+				if (info.cancelReason === "user_cancelled") return false
 			} catch {
-				// ignore parse errors
+				// Ignore malformed api_req_started payloads.
 			}
 		}
 
-		// Always show while task has started but no visible rows are rendered yet.
-		if (groupedMessages.length === 0) {
-			return true
-		}
-
-		// Defensive guard for transient states where a grouped row exists
-		// but we still cannot resolve a concrete visible message.
-		if (!lastVisibleMessage) {
-			return true
-		}
-
-		// Always show when the last rendered row is a toolgroup.
-		if (lastVisibleRow && isToolGroup(lastVisibleRow)) {
-			return true
-		}
-
-		// User-requested behavior:
-		// if the last visible row is not actively partial, always show Thinking in the footer.
-		// (some rows like checkpoint_created don't set `partial`, and should be treated as non-partial)
-		if (lastVisibleMessage.partial !== true) {
-			return true
-		}
-
-		if (!lastMsg) {
-			// No messages after the initial task message - new task just started
-			return true
-		}
+		if (visibleGroupedMessages.length === 0) return true
+		if (!lastVisibleMessage) return true
+		if (lastVisibleRow && isToolGroup(lastVisibleRow)) return true
+		if (lastVisibleMessage.partial !== true) return true
+		if (!lastMsg) return true
 		if (lastMsg.say === "user_feedback" || lastMsg.say === "user_feedback_diff") return true
+
 		if (lastMsg.say === "api_req_started") {
 			try {
 				const info = JSON.parse(lastMsg.text || "{}")
-				// Still in progress (no cost) and nothing has streamed after it yet
 				return info.cost == null
 			} catch {
 				return true
 			}
 		}
-		return false
-	}, [lastRawMessage, groupedMessages.length, lastVisibleMessage, lastVisibleRow, modifiedMessages])
 
-	// Keep loader in the message flow (not footer). During handoff from waiting -> reasoning stream,
-	// keep the loader mounted until a real reasoning row is visible.
+		return false
+	}, [lastRawMessage, visibleGroupedMessages.length, lastVisibleMessage, lastVisibleRow, modifiedMessages])
+
 	const showThinkingLoaderRow = useMemo(() => {
 		const handoffToReasoningPending =
 			lastRawMessage?.type === "say" &&
@@ -148,29 +219,13 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 			lastRawMessage.partial === true &&
 			lastVisibleMessage?.say !== "reasoning"
 
-		// Mirror the old footer behavior exactly: show whenever waiting logic says so.
-		// Plus a brief handoff guard while grouped rows catch up to raw reasoning stream.
 		return isWaitingForResponse || handoffToReasoningPending
 	}, [isWaitingForResponse, lastRawMessage, lastVisibleMessage?.say])
-
-	const displayedGroupedMessages = useMemo<(ClineMessage | ClineMessage[])[]>(() => {
-		if (!showThinkingLoaderRow) {
-			return groupedMessages
-		}
-		const waitingRow: ClineMessage = {
-			ts: Number.MIN_SAFE_INTEGER,
-			type: "say",
-			say: "reasoning",
-			partial: true,
-			text: "",
-		}
-		return [...groupedMessages, waitingRow]
-	}, [groupedMessages, showThinkingLoaderRow])
 
 	const itemContent = useMemo(
 		() =>
 			createMessageRenderer(
-				displayedGroupedMessages,
+				visibleGroupedMessages,
 				modifiedMessages,
 				expandedRows,
 				toggleRowExpansion,
@@ -181,7 +236,7 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 				false,
 			),
 		[
-			displayedGroupedMessages,
+			visibleGroupedMessages,
 			modifiedMessages,
 			expandedRows,
 			toggleRowExpansion,
@@ -192,17 +247,205 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 		],
 	)
 
-	// Keep footer as a simple spacer. Thinking loading is rendered as an in-list row.
 	const virtuosoComponents = useMemo(
 		() => ({
-			Footer: () => <div className="min-h-1" />,
+			Footer: () => (
+				<>
+					{showThinkingLoaderRow && <div className="min-h-1" />}
+					<div className="min-h-1" />
+				</>
+			),
 		}),
-		[],
+		[showThinkingLoaderRow],
+	)
+
+	const fetchAndMerge = useCallback(
+		async (start: number, count: number, anchor?: PendingAnchor) => {
+			const key = `${start}:${count}`
+			if (inflightRef.current.has(key)) return false
+
+			inflightRef.current.add(key)
+
+			if (anchor) {
+				pendingAnchorRef.current = anchor
+			}
+
+			try {
+				const resp = await TaskServiceClient.fetchMessage(FetchMessageRequest.create({ referenceIndex: start, count }))
+				const msgs = (resp.messages as any[]).map((m) => convertProtoToClineMessage(m)) as ClineMessage[]
+				const si = resp.startIndex
+
+				if (msgs.length === 0) {
+					if (anchor) pendingAnchorRef.current = null
+					return false
+				}
+
+				let merged = false
+
+				setClineMessages((prev) => {
+					const fi = firstItemIndexRef.current
+
+					if (si === fi + prev.length) {
+						merged = true
+
+						const next = [...prev, ...msgs]
+						clineMessagesLengthRef.current = next.length
+
+						return next
+					}
+
+					if (si + msgs.length === fi) {
+						merged = true
+						firstItemIndexRef.current = si
+						setFirstItemIndex(si)
+
+						const next = [...msgs, ...prev]
+						clineMessagesLengthRef.current = next.length
+
+						return next
+					}
+
+					return prev
+				})
+
+				if (!merged && anchor) {
+					pendingAnchorRef.current = null
+				}
+
+				return merged
+			} catch (e) {
+				if (anchor) pendingAnchorRef.current = null
+				console.error("fetchMessage:", e)
+				return false
+			} finally {
+				inflightRef.current.delete(key)
+			}
+		},
+		[setClineMessages, setFirstItemIndex],
+	)
+
+	const handleRangeChanged = useCallback(
+		(range: { startIndex: number; endIndex: number }) => {
+			const dataLen = clineMessagesLengthRef.current
+			const fi = firstItemIndexRef.current
+			const total = totalMessageCount ?? dataLen
+
+			if (dataLen === 0) return
+			if (renderRows.length === 0) return
+
+			const firstVisibleRow = renderRows[range.startIndex]
+			const lastVisibleRow = renderRows[range.endIndex]
+
+			if (!firstVisibleRow || !lastVisibleRow) return
+
+			const firstVisibleMessageIndex = firstVisibleRow.startMessageIndex
+			const lastVisibleMessageIndex = lastVisibleRow.endMessageIndex
+			const firstVisibleMessageTs = firstVisibleRow.startMessageTs
+
+			const topRowDistance = Math.max(0, range.startIndex)
+			const bottomRowDistance = Math.max(0, renderRows.length - 1 - range.endIndex)
+
+			const isAllLoaded = fi <= 0 && fi + dataLen >= total
+			const aheadCount = Math.max(0, firstVisibleMessageIndex - fi)
+			const behindCount = Math.max(0, fi + dataLen - 1 - lastVisibleMessageIndex)
+
+			const viewportCenter = (firstVisibleMessageIndex + lastVisibleMessageIndex) / 2
+			const prevViewportCenter = lastViewportCenterRef.current
+			lastViewportCenterRef.current = viewportCenter
+
+			let scrollDirection: ScrollDirection = "none"
+
+			if (prevViewportCenter != null) {
+				if (viewportCenter > prevViewportCenter + 2) {
+					scrollDirection = "down"
+				} else if (viewportCenter < prevViewportCenter - 2) {
+					scrollDirection = "up"
+				}
+			}
+
+			setShowScrollToBottom(disableAutoScrollRef.current || !isAllLoaded || lastVisibleMessageIndex < total - 1)
+
+			console.log(
+				`[MessagesArea] rangeChanged: visibleRows=[${range.startIndex},${range.endIndex}] ` +
+					`visibleMessages=[${firstVisibleMessageIndex},${lastVisibleMessageIndex}] ` +
+					`fi=${fi} dataLen=${dataLen} total=${total} | ` +
+					`ahead=${aheadCount} behind=${behindCount} ` +
+					`topRows=${topRowDistance} bottomRows=${bottomRowDistance} ` +
+					`direction=${scrollDirection}`,
+			)
+
+			if (scrollDirection === "up" && behindCount > MAX_SIDE_BUFFER) {
+				const keep = Math.max(0, Math.min(dataLen, dataLen - (behindCount - TRIM_SIDE_TARGET)))
+
+				if (keep < dataLen) {
+					setClineMessages((prev) => {
+						const next = prev.slice(0, keep)
+						clineMessagesLengthRef.current = next.length
+						return next
+					})
+
+					return
+				}
+			}
+
+			if (scrollDirection === "down" && aheadCount > MAX_SIDE_BUFFER && firstVisibleMessageTs != null) {
+				const remove = Math.max(0, Math.min(aheadCount - TRIM_SIDE_TARGET, dataLen))
+
+				if (remove > 0) {
+					pendingAnchorRef.current = {
+						ts: firstVisibleMessageTs,
+						align: "start",
+					}
+
+					setClineMessages((prev) => {
+						const next = prev.slice(remove)
+						clineMessagesLengthRef.current = next.length
+						return next
+					})
+
+					setFirstItemIndex((prev) => {
+						const next = prev + remove
+						firstItemIndexRef.current = next
+						return next
+					})
+
+					return
+				}
+			}
+
+			if ((topRowDistance <= ROW_LOAD_THRESHOLD || aheadCount < LOAD_THRESHOLD) && fi > 0) {
+				const start = Math.max(fi - LOAD_COUNT, 0)
+				const take = fi - start
+
+				if (take > 0 && firstVisibleMessageTs != null) {
+					void fetchAndMerge(start, take, {
+						ts: firstVisibleMessageTs,
+						align: "start",
+					})
+				}
+			}
+
+			if ((bottomRowDistance <= ROW_LOAD_THRESHOLD || behindCount < LOAD_THRESHOLD) && fi + dataLen < total) {
+				const take = Math.min(LOAD_COUNT, total - (fi + dataLen))
+
+				if (take > 0) {
+					void fetchAndMerge(fi + dataLen, take)
+				}
+			}
+		},
+		[
+			totalMessageCount,
+			renderRows,
+			disableAutoScrollRef,
+			setShowScrollToBottom,
+			setClineMessages,
+			setFirstItemIndex,
+			fetchAndMerge,
+		],
 	)
 
 	return (
 		<div className="overflow-hidden flex flex-col h-full relative">
-			{/* Sticky User Message - positioned absolutely to avoid layout shifts */}
 			<div
 				className={cn(
 					"absolute top-0 left-0 right-0 z-10 pl-[15px] pr-[14px] bg-background",
@@ -219,30 +462,24 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 				<Virtuoso
 					atBottomStateChange={(isAtBottom) => {
 						setIsAtBottom(isAtBottom)
+
 						if (isAtBottom) {
 							disableAutoScrollRef.current = false
 						}
+
 						setShowScrollToBottom(disableAutoScrollRef.current && !isAtBottom)
 					}}
-					atBottomThreshold={10} // trick to make sure virtuoso re-renders when task changes, and we use initialTopMostItemIndex to start at the bottom
-					className="scrollable grow overflow-y-scroll"
+					atBottomThreshold={10}
+					className="scrollable grow overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 					components={virtuosoComponents}
-					data={displayedGroupedMessages}
-					// increasing top by 3_000 to prevent jumping around when user collapses a row
-					increaseViewportBy={{
-						top: 3_000,
-						bottom: Number.MAX_SAFE_INTEGER,
-					}} // hack to make sure the last message is always rendered to get truly perfect scroll to bottom animation when new messages are added (Number.MAX_SAFE_INTEGER is safe for arithmetic operations, which is all virtuoso uses this value for in src/sizeRangeSystem.ts)
-					initialTopMostItemIndex={displayedGroupedMessages.length - 1} // messages is the raw format returned by extension, modifiedMessages is the manipulated structure that combines certain messages of related type, and visibleMessages is the filtered structure that removes messages that should not be rendered
+					data={visibleGroupedMessages}
+					increaseViewportBy={{ top: 100, bottom: 100 }}
+					initialTopMostItemIndex={Math.max(visibleGroupedMessages.length - 1, 0)}
 					itemContent={itemContent}
 					key={task.ts}
 					rangeChanged={handleRangeChanged}
-					ref={virtuosoRef} // anything lower causes issues with followOutput
-					style={{
-						scrollbarWidth: "none", // Firefox
-						msOverflowStyle: "none", // IE/Edge
-						overflowAnchor: "none", // prevent scroll jump when content expands
-					}}
+					ref={virtuosoRef}
+					style={{ overflowAnchor: "none" }}
 				/>
 			</div>
 		</div>
