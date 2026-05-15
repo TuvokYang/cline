@@ -36,6 +36,7 @@ export class Logger {
 	}
 
 	static debug(message: string, ...args: any[]) {
+		if (!Logger.isVerbose) return
 		Logger.#output("DEBUG", message, undefined, args)
 	}
 
@@ -44,6 +45,7 @@ export class Logger {
 	}
 
 	static trace(message: string, ...args: any[]) {
+		if (!Logger.isVerbose) return
 		Logger.#output("TRACE", message, undefined, args)
 	}
 

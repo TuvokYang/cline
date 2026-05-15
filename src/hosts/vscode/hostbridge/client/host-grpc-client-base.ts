@@ -61,11 +61,10 @@ export function createGrpcClient<T extends ProtoService>(service: T): GrpcClient
 						// If the result is a function, it's the cancel function
 						if (typeof result === "function") {
 							return result
-						} else {
-							// This shouldn't happen, but just in case
-							Logger.error(`Expected cancel function but got response object for streaming request: ${requestId}`)
-							return () => {}
 						}
+						// This shouldn't happen, but just in case
+						Logger.error(`Expected cancel function but got response object for streaming request: ${requestId}`)
+						return () => {}
 					} catch (error) {
 						Logger.error(`Error in streaming request: ${error}`)
 						if (options.onError) {
@@ -90,7 +89,7 @@ export function createGrpcClient<T extends ProtoService>(service: T): GrpcClient
 						}
 						resolve(response)
 					} catch (e) {
-						Logger.log(`[DEBUG] gRPC host ERR to ${service.fullName}.${methodKey} req:${requestId} err:${e}`)
+						Logger.debug(`gRPC host ERR to ${service.fullName}.${methodKey} req:${requestId} err:${e}`)
 						reject(e)
 					}
 				})

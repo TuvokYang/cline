@@ -112,7 +112,7 @@ export abstract class ProtoBusClient {
 					request_id: requestId,
 				},
 			})
-			console.log(`[DEBUG] Sent cancellation for request: ${requestId}`)
+			console.debug(`Sent cancellation for request: ${requestId}`)
 		}
 	}
 }

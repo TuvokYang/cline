@@ -46,7 +46,7 @@ export async function sendOpenRouterModelsEvent(models: OpenRouterCompatibleMode
 				models,
 				false, // Not the last message
 			)
-			Logger.log("[DEBUG] sending OpenRouter models event")
+			Logger.debug("sending OpenRouter models event")
 		} catch (error) {
 			Logger.error("Error sending OpenRouter models event:", error)
 			// Remove the subscription if there was an error
