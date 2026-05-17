@@ -1,4 +1,14 @@
 # Changelog
+## [3.83.1]
+
+### Fixed
+
+- Reduce gRPC payload size by replacing bulk message push with fetchMessage RPC sliding window, preventing webview OOM white screen in long conversations
+
+### Changed
+
+- Reorganize log levels, moving debug-appropriate messages from Logger.log to Logger.debug
+
 ## [3.83.0]
 
 ### Fixed
