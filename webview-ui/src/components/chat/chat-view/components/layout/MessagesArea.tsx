@@ -58,6 +58,10 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 	const lastViewportCenterRef = useRef<number | null>(null)
 	const inflightRef = useRef<Set<string>>(new Set())
 	const pendingAnchorRef = useRef<PendingAnchor | null>(null)
+	const prevRangeRef = useRef<{ start: number; end: number } | null>(null)
+	const lastRangeProcessedRef = useRef(0)
+	const isUserScrollingRef = useRef(false)
+	const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
 	useEffect(() => {
 		firstItemIndexRef.current = firstItemIndex
@@ -333,8 +337,23 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 			if (dataLen === 0) return
 			if (renderRows.length === 0) return
 
-			const firstVisibleRow = renderRows[range.startIndex]
-			const lastVisibleRow = renderRows[range.endIndex]
+			const now = Date.now()
+			if (now - lastRangeProcessedRef.current < 200) return
+			lastRangeProcessedRef.current = now
+
+			// Filter out rangeChanged calls not caused by actual scroll (e.g. subscribeToState push).
+			if (
+				prevRangeRef.current &&
+				prevRangeRef.current.start === range.startIndex &&
+				prevRangeRef.current.end === range.endIndex
+			)
+				return
+			prevRangeRef.current = { start: range.startIndex, end: range.endIndex }
+
+			const localStart = range.startIndex - fi
+			const localEnd = range.endIndex - fi
+			const firstVisibleRow = renderRows[localStart]
+			const lastVisibleRow = renderRows[localEnd]
 
 			if (!firstVisibleRow || !lastVisibleRow) return
 
@@ -342,10 +361,12 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 			const lastVisibleMessageIndex = lastVisibleRow.endMessageIndex
 			const firstVisibleMessageTs = firstVisibleRow.startMessageTs
 
-			const topRowDistance = Math.max(0, range.startIndex)
-			const bottomRowDistance = Math.max(0, renderRows.length - 1 - range.endIndex)
+			const topRowDistance = Math.max(0, localStart)
+			const bottomRowDistance = Math.max(0, renderRows.length - 1 - localEnd)
 
 			const isAllLoaded = fi <= 0 && fi + dataLen >= total
+			if (isAllLoaded) return
+
 			const aheadCount = Math.max(0, firstVisibleMessageIndex - fi)
 			const behindCount = Math.max(0, fi + dataLen - 1 - lastVisibleMessageIndex)
 
@@ -365,53 +386,15 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 
 			setShowScrollToBottom(disableAutoScrollRef.current || !isAllLoaded || lastVisibleMessageIndex < total - 1)
 
-			console.log(
+			console.debug(
 				`[MessagesArea] rangeChanged: visibleRows=[${range.startIndex},${range.endIndex}] ` +
+					`localRows=[${localStart},${localEnd}] ` +
 					`visibleMessages=[${firstVisibleMessageIndex},${lastVisibleMessageIndex}] ` +
 					`fi=${fi} dataLen=${dataLen} total=${total} | ` +
 					`ahead=${aheadCount} behind=${behindCount} ` +
 					`topRows=${topRowDistance} bottomRows=${bottomRowDistance} ` +
 					`direction=${scrollDirection}`,
 			)
-
-			if (scrollDirection === "up" && behindCount > MAX_SIDE_BUFFER) {
-				const keep = Math.max(0, Math.min(dataLen, dataLen - (behindCount - TRIM_SIDE_TARGET)))
-
-				if (keep < dataLen) {
-					setClineMessages((prev) => {
-						const next = prev.slice(0, keep)
-						clineMessagesLengthRef.current = next.length
-						return next
-					})
-
-					return
-				}
-			}
-
-			if (scrollDirection === "down" && aheadCount > MAX_SIDE_BUFFER && firstVisibleMessageTs != null) {
-				const remove = Math.max(0, Math.min(aheadCount - TRIM_SIDE_TARGET, dataLen))
-
-				if (remove > 0) {
-					pendingAnchorRef.current = {
-						ts: firstVisibleMessageTs,
-						align: "start",
-					}
-
-					setClineMessages((prev) => {
-						const next = prev.slice(remove)
-						clineMessagesLengthRef.current = next.length
-						return next
-					})
-
-					setFirstItemIndex((prev) => {
-						const next = prev + remove
-						firstItemIndexRef.current = next
-						return next
-					})
-
-					return
-				}
-			}
 
 			if ((topRowDistance <= ROW_LOAD_THRESHOLD || aheadCount < LOAD_THRESHOLD) && fi > 0) {
 				const start = Math.max(fi - LOAD_COUNT, 0)
@@ -444,6 +427,72 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 		],
 	)
 
+	// Mark user scrolling via native scroll events on the container.
+	useEffect(() => {
+		const el = scrollContainerRef.current
+		if (!el) return
+		const onScroll = () => {
+			isUserScrollingRef.current = true
+			if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
+			scrollTimerRef.current = setTimeout(() => {
+				isUserScrollingRef.current = false
+			}, 300)
+		}
+		el.addEventListener("scroll", onScroll, { passive: true })
+		return () => {
+			el.removeEventListener("scroll", onScroll)
+			if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
+		}
+	}, [scrollContainerRef])
+
+	// Idle trim: only when user is NOT actively scrolling.
+	useEffect(() => {
+		if (isUserScrollingRef.current) return
+		const fi = firstItemIndexRef.current
+		const dataLen = clineMessagesLengthRef.current
+		if (dataLen === 0) return
+
+		const total = totalMessageCount ?? dataLen
+		if (fi <= 0 && fi + dataLen >= total) return // all loaded, no trim needed
+
+		if (renderRows.length === 0) return
+
+		const firstRow = renderRows[0]
+		const lastRow = renderRows[renderRows.length - 1]
+		if (!firstRow || !lastRow) return
+
+		const aheadCount = Math.max(0, firstRow.startMessageIndex - fi)
+		const behindCount = Math.max(0, fi + dataLen - 1 - lastRow.endMessageIndex)
+
+		if (aheadCount > MAX_SIDE_BUFFER) {
+			const remove = Math.max(0, Math.min(aheadCount - TRIM_SIDE_TARGET, dataLen))
+			if (remove > 0) {
+				setClineMessages((prev) => {
+					const next = prev.slice(remove)
+					clineMessagesLengthRef.current = next.length
+					return next
+				})
+				setFirstItemIndex((prev) => {
+					const next = prev + remove
+					firstItemIndexRef.current = next
+					return next
+				})
+			}
+			return
+		}
+
+		if (behindCount > MAX_SIDE_BUFFER) {
+			const keep = Math.max(0, Math.min(dataLen, dataLen - (behindCount - TRIM_SIDE_TARGET)))
+			if (keep < dataLen) {
+				setClineMessages((prev) => {
+					const next = prev.slice(0, keep)
+					clineMessagesLengthRef.current = next.length
+					return next
+				})
+			}
+		}
+	}, [clineMessages.length, firstItemIndex, totalMessageCount, renderRows, setClineMessages, setFirstItemIndex])
+
 	return (
 		<div className="overflow-hidden flex flex-col h-full relative">
 			<div
@@ -473,13 +522,15 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 					className="scrollable grow overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 					components={virtuosoComponents}
 					data={visibleGroupedMessages}
+					firstItemIndex={firstItemIndex}
 					increaseViewportBy={{ top: 100, bottom: 100 }}
-					initialTopMostItemIndex={Math.max(visibleGroupedMessages.length - 1, 0)}
+					initialTopMostItemIndex={firstItemIndex + Math.max(visibleGroupedMessages.length - 1, 0)}
 					itemContent={itemContent}
 					key={task.ts}
 					rangeChanged={handleRangeChanged}
 					ref={virtuosoRef}
 					style={{ overflowAnchor: "none" }}
+					totalCount={totalMessageCount ?? clineMessages.length}
 				/>
 			</div>
 		</div>
