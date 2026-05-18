@@ -121,7 +121,7 @@ jobs:
         run: cd webview-ui && bun install
 
       - name: Install Publishing Tools
-        run: bun install -g @vscode/vsce ovsx
+        run: npm install -g @vscode/vsce ovsx
 
       - name: Get Version
         id: get_version
