@@ -62,6 +62,7 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 	const lastRangeProcessedRef = useRef(0)
 	const isUserScrollingRef = useRef(false)
 	const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const mergeLockRef = useRef(false)
 
 	useEffect(() => {
 		firstItemIndexRef.current = firstItemIndex
@@ -298,8 +299,9 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 						return next
 					}
 
-					if (si + msgs.length === fi) {
+					if (si + msgs.length <= fi) {
 						merged = true
+						mergeLockRef.current = true
 						firstItemIndexRef.current = si
 						setFirstItemIndex(si)
 
@@ -338,6 +340,13 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 			if (renderRows.length === 0) return
 
 			const now = Date.now()
+
+			// Skip first rangeChanged after fetchAndMerge to prevent Virtuoso re-layout bounce
+			if (mergeLockRef.current) {
+				mergeLockRef.current = false
+				return
+			}
+
 			if (now - lastRangeProcessedRef.current < 200) return
 			lastRangeProcessedRef.current = now
 

@@ -10,7 +10,7 @@ import { ClineAccountService } from "@services/account/ClineAccountService"
 import { McpHub } from "@services/mcp/McpHub"
 import type { ApiProvider, ModelInfo } from "@shared/api"
 import type { ChatContent } from "@shared/ChatContent"
-import type { ClineMessage, ExtensionState, Platform } from "@shared/ExtensionMessage"
+import type { ExtensionState, Platform } from "@shared/ExtensionMessage"
 import type { HistoryItem } from "@shared/HistoryItem"
 import type { McpMarketplaceCatalog, McpMarketplaceItem } from "@shared/mcp"
 import { type Settings } from "@shared/storage/state-keys"
@@ -898,13 +898,12 @@ export class Controller {
 		const workflowToggles = this.stateManager.getWorkspaceStateKey("workflowToggles")
 
 		const currentTaskItem = this.task?.taskId ? (taskHistory || []).find((item) => item.id === this.task?.taskId) : undefined
-		// Spread to create new array reference - React needs this to detect changes in useEffect dependencies
-		const clineMessages = [] as ClineMessage[]
 		const rawMessages = [...(this.task?.messageStateHandler.getClineMessages() || [])]
 		// Separate task header message from body messages.
 		const taskTitleMessage = rawMessages.find((m) => m.say === "task") ?? rawMessages.at(0)
-		const bodyMessages = rawMessages.filter((m) => m !== taskTitleMessage)
-		const totalMessageCount = bodyMessages.length
+		// totalMessageCount now includes the task message (matching fetchMessage behavior)
+		// so the frontend can detect when scrolled to the absolute top (index 0)
+		const totalMessageCount = rawMessages.length
 		// firstItemIndex is managed by fetchMessage; default to latest window on init
 		const firstItemIndex = Math.max(0, totalMessageCount - 100)
 		const checkpointManagerErrorMessage = this.task?.taskState.checkpointManagerErrorMessage
