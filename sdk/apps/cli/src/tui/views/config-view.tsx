@@ -262,8 +262,6 @@ export function ConfigPanelContent(props: ConfigPanelProps) {
 
 	const displayName = resolveModelDisplayName(config);
 
-	const { loadConfigData } = props;
-
 	useEffect(() => {
 		if (
 			activeTab !== "tools" ||
