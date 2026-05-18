@@ -132,6 +132,7 @@ jobs:
               if: runner.os == 'Windows'
               run: |
                   npm config set script-shell "C:\\Program Files\\Git\\bin\\bash.exe"
+                  npm install
 
             - name: Cache VS Code test runtime
               if: runner.os == 'Windows'
