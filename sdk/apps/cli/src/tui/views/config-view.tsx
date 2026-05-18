@@ -236,7 +236,7 @@ function appendToolRows(
 }
 
 export function ConfigPanelContent(props: ConfigPanelProps) {
-	const { resolve, dismiss, dialogId, config } = props;
+	const { resolve, dismiss, dialogId, config, loadConfigData } = props;
 	const { height } = useTerminalDimensions();
 
 	const [mode, setMode] = useState(props.currentMode);
