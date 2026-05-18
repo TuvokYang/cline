@@ -57,7 +57,7 @@ function consolidateReasoningDetails(reasoningDetails: ReasoningDetail[]): Reaso
 		if (!groupedByIndex.has(index)) {
 			groupedByIndex.set(index, [])
 		}
-		groupedByIndex.get(index)!.push(detail)
+		groupedByIndex.get(index)?.push(detail)
 	}
 
 	const consolidated: ReasoningDetail[] = []
@@ -351,7 +351,7 @@ export function convertDeepSeekMessages(originalMessages: ClineStorageMessage[],
 					pendingThinking = ""
 				}
 				if (thinkingText) {
-					reasoning = reasoning ? reasoning + "\n" + thinkingText : thinkingText
+					reasoning = reasoning ? `${reasoning}\n${thinkingText}` : thinkingText
 				}
 				if (reasoning) {
 					converted.reasoning_content = reasoning
@@ -360,7 +360,7 @@ export function convertDeepSeekMessages(originalMessages: ClineStorageMessage[],
 			} else {
 				// Pure thinking message — accumulate for next valid assistant
 				if (thinkingText) {
-					pendingThinking = pendingThinking ? pendingThinking + "\n" + thinkingText : thinkingText
+					pendingThinking = pendingThinking ? `${pendingThinking}\n${thinkingText}` : thinkingText
 				}
 			}
 		} else if (msg.role === "user") {
