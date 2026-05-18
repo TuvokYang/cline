@@ -111,14 +111,17 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install bun
+        run: npm install -g bun
+
       - name: Install root dependencies
-        run: npm install --include=optional
+        run: bun install
 
       - name: Install webview-ui dependencies
-        run: cd webview-ui && npm install --include=optional
+        run: cd webview-ui && bun install
 
       - name: Install Publishing Tools
-        run: npm install -g @vscode/vsce ovsx
+        run: bun install -g @vscode/vsce ovsx
 
       - name: Get Version
         id: get_version
