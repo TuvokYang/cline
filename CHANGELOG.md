@@ -8,6 +8,8 @@
 ### Changed
 
 - Reorganize log levels, moving debug-appropriate messages from Logger.log to Logger.debug
+- Migrate `deepseek-chat` and `deepseek-reasoner` to `deepseek-v4-flash`; unify message conversion to `convertDeepSeekMessages` for all thinking-enabled DeepSeek requests
+- Frontend: show thinking toggle for all DeepSeek models with `supportsReasoning`; update thinking level description to clarify `high` vs `xhigh`
 
 ## [3.83.0]
 
