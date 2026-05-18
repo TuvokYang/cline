@@ -111,16 +111,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install bun
-        run: npm install -g bun
-
       - name: Install root dependencies
-        run: |
-          bun install
-          npm install --package-lock-only --ignore-scripts
+        run: npm ci
 
       - name: Install webview-ui dependencies
-        run: cd webview-ui && bun install
+        run: cd webview-ui && npm ci
 
       - name: Install Publishing Tools
         run: npm install -g @vscode/vsce ovsx
