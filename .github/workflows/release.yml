@@ -115,7 +115,9 @@ jobs:
         run: npm install -g bun
 
       - name: Install root dependencies
-        run: bun install
+        run: |
+          bun install
+          npm install --package-lock-only --ignore-scripts
 
       - name: Install webview-ui dependencies
         run: cd webview-ui && bun install

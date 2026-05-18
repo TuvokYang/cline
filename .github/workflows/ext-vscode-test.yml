@@ -83,21 +83,18 @@ jobs:
               uses: actions/setup-node@v4
               with:
                   node-version: 22
-                  cache: 'npm'
-                  cache-dependency-path: |
-                      package-lock.json
-                      webview-ui/package-lock.json
+
+            - name: Install bun
+              run: npm install -g bun
 
             - name: Install root dependencies
-              run: npm ci
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: bun install
 
             - name: Install webview-ui dependencies
-              run: cd webview-ui && npm ci
+              run: cd webview-ui && bun install
 
             - name: Run Quality Checks (Parallel)
-              run: npm run ci:check-all
+              run: bun run ci:check-all
 
     vscode-test:
         needs: [detect-changes, quality-checks]
@@ -121,18 +118,15 @@ jobs:
               uses: actions/setup-node@v4
               with:
                   node-version: 22
-                  cache: 'npm'
-                  cache-dependency-path: |
-                      package-lock.json
-                      webview-ui/package-lock.json
+
+            - name: Install bun
+              run: npm install -g bun
 
             - name: Install root dependencies
-              run: npm ci
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: bun install
 
             - name: Install webview-ui dependencies
-              run: cd webview-ui && npm ci
+              run: cd webview-ui && bun install
 
             - name: Set up NPM on Windows
               if: runner.os == 'Windows'
